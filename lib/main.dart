@@ -1,13 +1,12 @@
 // Contenu complet pour lib/main.dart à la fin de l'Étape 2
 
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 import 'dart:typed_data'; // Pour Uint8List
 import 'package:logger/logger.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:share_plus/share_plus.dart';
+import 'models/style_options.dart'; // Import for the new style options file
+import 'services/image_service.dart'; // Import for the new image service
+import 'services/file_service.dart'; // Import for the new file service
+import 'widgets/style_options_panel.dart'; // Import the new widget
 
 // Créer une instance de logger pour l'application
 final logger = Logger();
@@ -78,11 +77,11 @@ class MyApp extends StatelessWidget {
 }
 
 // ÉTAPE 7.1: Définir les énumérations pour les options de style
-enum BackgroundStyle { gradient, solid, pattern }
+// enum BackgroundStyle { gradient, solid, pattern }
 
-enum FontStyle { classic, modern, script, bold }
+// enum FontStyle { classic, modern, script, bold }
 
-enum ColorSchemeOption { blue, green, purple, sunset, grayscale }
+// enum ColorSchemeOption { blue, green, purple, sunset, grayscale }
 
 // Notre écran principal pour l'application.
 // DOIT être un StatefulWidget car son état (le texte des champs) peut changer.
@@ -151,584 +150,6 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
-  // ÉTAPE 8: Mise à jour de la fonction pour utiliser les options de style
-  Future<Uint8List?> generateStyledImage(
-    String quoteText,
-    String authorText,
-    BackgroundStyle backgroundStyle,
-    FontStyle fontStyle,
-    ColorSchemeOption colorScheme,
-    bool showFrame,
-    bool showAuthor,
-    double fontSize,
-  ) async {
-    try {
-      // Dimensions de l'image
-      const int width = 800;
-      const int height = 400;
-
-      // Créer une image vierge
-      final image = img.Image(width: width, height: height);
-
-      // ÉTAPE 8.1: Appliquer le style de fond sélectionné
-      _applyBackground(image, backgroundStyle, colorScheme);
-
-      // ÉTAPE 8.2: Ajouter un cadre si demandé
-      if (showFrame) {
-        _applyFrame(image, colorScheme);
-      }
-
-      // ÉTAPE 8.3: Dessiner la citation avec le style de police sélectionné
-      _drawQuote(image, quoteText, fontStyle, colorScheme, fontSize);
-
-      // ÉTAPE 8.4: Dessiner l'auteur si demandé
-      if (showAuthor && authorText.isNotEmpty) {
-        _drawAuthor(image, authorText, fontStyle, colorScheme);
-      }
-
-      // Encoder l'image en PNG
-      final List<int>? pngBytes = img.encodePng(image);
-
-      if (pngBytes != null) {
-        return Uint8List.fromList(pngBytes);
-      } else {
-        logger.e("Erreur: L'encodage PNG a échoué.");
-        return null;
-      }
-    } catch (e) {
-      logger.e("Erreur pendant la génération d'image: $e");
-      return null;
-    }
-  }
-
-  // ÉTAPE 8.5: Fonction pour appliquer le fond selon le style choisi
-  void _applyBackground(
-    img.Image image,
-    BackgroundStyle style,
-    ColorSchemeOption colorScheme,
-  ) {
-    // Obtenir les couleurs en fonction du schéma de couleurs
-    final List<img.ColorRgb8> colors = _getColorsForScheme(colorScheme);
-
-    switch (style) {
-      case BackgroundStyle.solid:
-        // Remplir avec une couleur unie
-        img.fill(image, color: colors[0]);
-        break;
-
-      case BackgroundStyle.gradient:
-        // Créer un dégradé du haut vers le bas
-        for (int y = 0; y < image.height; y++) {
-          for (int x = 0; x < image.width; x++) {
-            final double ratio = y / image.height;
-            final color1 = colors[0];
-            final color2 = colors[1];
-
-            final int r = (color1.r * (1 - ratio) + color2.r * ratio).round();
-            final int g = (color1.g * (1 - ratio) + color2.g * ratio).round();
-            final int b = (color1.b * (1 - ratio) + color2.b * ratio).round();
-
-            image.setPixel(x, y, img.ColorRgb8(r, g, b));
-          }
-        }
-        break;
-
-      case BackgroundStyle.pattern:
-        // Un motif simple (rayures)
-        img.fill(image, color: colors[0]);
-        final patternColor = colors[1];
-
-        for (int y = 0; y < image.height; y += 20) {
-          for (int x = 0; x < image.width; x++) {
-            // Dessiner une ligne horizontale toutes les 20 pixels
-            if (y < image.height) {
-              image.setPixel(x, y, patternColor);
-            }
-          }
-        }
-        break;
-    }
-  }
-
-  // ÉTAPE 8.6: Fonction pour dessiner un cadre
-  void _applyFrame(img.Image image, ColorSchemeOption colorScheme) {
-    final List<img.ColorRgb8> colors = _getColorsForScheme(colorScheme);
-    final frameColor =
-        colors.length > 2 ? colors[2] : img.ColorRgb8(255, 255, 255);
-
-    // Dessiner un rectangle avec la couleur du cadre
-    img.drawRect(
-      image,
-      x1: 10,
-      y1: 10,
-      x2: image.width - 10,
-      y2: image.height - 10,
-      color: frameColor,
-      thickness: 3,
-    );
-  }
-
-  // ÉTAPE 8.7: Fonction pour dessiner la citation
-  void _drawQuote(
-    img.Image image,
-    String quoteText,
-    FontStyle fontStyle,
-    ColorSchemeOption colorScheme,
-    double fontSize,
-  ) {
-    final List<img.ColorRgb8> colors = _getColorsForScheme(colorScheme);
-    final textColor =
-        colors.length > 3 ? colors[3] : img.ColorRgb8(255, 255, 255);
-
-    // Sélectionner la police selon le style
-    img.BitmapFont font;
-    switch (fontStyle) {
-      case FontStyle.modern:
-        font = img.arial24; // Utiliser une police disponible
-        break;
-      case FontStyle.script:
-        font = img.arial24; // Remplacer par une police script si disponible
-        break;
-      case FontStyle.bold:
-        font = img.arial24; // Remplacer par une police bold si disponible
-        break;
-      case FontStyle.classic:
-        font = img.arial24;
-    }
-
-    // Dessiner les guillemets avant la citation
-    img.drawString(
-      image,
-      '"',
-      font: font,
-      x: 30,
-      y: image.height ~/ 3 - 10,
-      color: textColor,
-    );
-
-    // Dessiner la citation
-    img.drawString(
-      image,
-      quoteText,
-      font: font,
-      x: 50,
-      y: image.height ~/ 3,
-      color: textColor,
-    );
-
-    // Dessiner les guillemets après la citation
-    img.drawString(
-      image,
-      '"',
-      font: font,
-      x: 60 + (quoteText.length * 10).clamp(0, image.width - 100),
-      y: image.height ~/ 3 - 10,
-      color: textColor,
-    );
-  }
-
-  // ÉTAPE 8.8: Fonction pour dessiner l'auteur
-  void _drawAuthor(
-    img.Image image,
-    String authorText,
-    FontStyle fontStyle,
-    ColorSchemeOption colorScheme,
-  ) {
-    final List<img.ColorRgb8> colors = _getColorsForScheme(colorScheme);
-    final textColor =
-        colors.length > 3 ? colors[3] : img.ColorRgb8(255, 255, 255);
-
-    img.drawString(
-      image,
-      '- $authorText',
-      font: img.arial14,
-      x: image.width - 150,
-      y: image.height - 50,
-      color: textColor,
-    );
-  }
-
-  // ÉTAPE 8.9: Fonction pour obtenir les couleurs selon le schéma choisi
-  List<img.ColorRgb8> _getColorsForScheme(ColorSchemeOption scheme) {
-    switch (scheme) {
-      case ColorSchemeOption.blue:
-        return [
-          img.ColorRgb8(150, 200, 255), // Bleu clair
-          img.ColorRgb8(100, 150, 200), // Bleu foncé
-          img.ColorRgb8(255, 255, 255), // Blanc pour le cadre
-          img.ColorRgb8(255, 255, 255), // Blanc pour le texte
-        ];
-      case ColorSchemeOption.green:
-        return [
-          img.ColorRgb8(150, 220, 150), // Vert clair
-          img.ColorRgb8(70, 150, 70), // Vert foncé
-          img.ColorRgb8(255, 255, 255), // Blanc pour le cadre
-          img.ColorRgb8(255, 255, 255), // Blanc pour le texte
-        ];
-      case ColorSchemeOption.purple:
-        return [
-          img.ColorRgb8(200, 150, 220), // Violet clair
-          img.ColorRgb8(130, 80, 170), // Violet foncé
-          img.ColorRgb8(255, 255, 255), // Blanc pour le cadre
-          img.ColorRgb8(255, 255, 255), // Blanc pour le texte
-        ];
-      case ColorSchemeOption.sunset:
-        return [
-          img.ColorRgb8(255, 200, 130), // Orange clair
-          img.ColorRgb8(220, 100, 90), // Rouge-orange
-          img.ColorRgb8(255, 255, 255), // Blanc pour le cadre
-          img.ColorRgb8(255, 255, 255), // Blanc pour le texte
-        ];
-      case ColorSchemeOption.grayscale:
-        return [
-          img.ColorRgb8(220, 220, 220), // Gris clair
-          img.ColorRgb8(80, 80, 80), // Gris foncé
-          img.ColorRgb8(255, 255, 255), // Blanc pour le cadre
-          img.ColorRgb8(255, 255, 255), // Blanc pour le texte
-        ];
-    }
-  }
-
-  // ÉTAPE 9: Fonction pour partager l'image générée
-  Future<void> _shareImage() async {
-    if (_generatedImageBytes == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Aucune image à partager')),
-        );
-      }
-      return;
-    }
-
-    try {
-      // Créer un fichier temporaire pour l'image
-      final directory = await getTemporaryDirectory();
-      final String fileName =
-          'citation_${DateTime.now().millisecondsSinceEpoch}.png';
-      final String filePath = '${directory.path}/$fileName';
-
-      // Écrire les données de l'image dans le fichier
-      final File file = File(filePath);
-      await file.writeAsBytes(_generatedImageBytes!);
-
-      // Partager le fichier
-      final result = await Share.shareXFiles(
-        [XFile(filePath)],
-        text: 'Voici une citation que j\'ai générée!',
-        subject: 'Citation Inspirante',
-      );
-
-      logger.d('Résultat du partage: ${result.status}');
-    } catch (e) {
-      logger.e('Erreur lors du partage: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Erreur lors du partage')));
-      }
-    }
-  }
-
-  // Fonction pour sauvegarder l'image sur l'appareil
-  Future<void> _saveImageToGallery() async {
-    if (_generatedImageBytes == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Aucune image à sauvegarder')),
-        );
-      }
-      return;
-    }
-
-    try {
-      // Demander la permission d'accès au stockage
-      final status = await Permission.storage.request();
-      if (!status.isGranted) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Permission refusée')));
-        }
-        return;
-      }
-
-      // Obtenir le répertoire de stockage
-      final directory = await getApplicationDocumentsDirectory();
-      final String fileName =
-          'citation_${DateTime.now().millisecondsSinceEpoch}.png';
-      final String filePath = '${directory.path}/$fileName';
-
-      // Écrire les données de l'image dans un fichier
-      final File file = File(filePath);
-      await file.writeAsBytes(_generatedImageBytes!);
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Image sauvegardée: $filePath')));
-      }
-      logger.d('Image sauvegardée à: $filePath');
-    } catch (e) {
-      logger.e('Erreur lors de la sauvegarde: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Erreur lors de la sauvegarde')),
-        );
-      }
-    }
-  }
-
-  // ÉTAPE 7.3: Construire le panneau d'options de style
-  Widget _buildStyleOptionsPanel() {
-    return ExpansionTile(
-      title: const Text(
-        'Options de style',
-        style: TextStyle(fontWeight: FontWeight.bold),
-      ),
-      subtitle: const Text('Personnalisez l\'apparence de votre citation'),
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Sélection du style de fond
-              const Text(
-                'Style d\'arrière-plan:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Wrap(
-                spacing: 10,
-                children: [
-                  ChoiceChip(
-                    label: const Text('Dégradé'),
-                    selected:
-                        _selectedBackgroundStyle == BackgroundStyle.gradient,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedBackgroundStyle = BackgroundStyle.gradient;
-                        });
-                      }
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Uni'),
-                    selected: _selectedBackgroundStyle == BackgroundStyle.solid,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedBackgroundStyle = BackgroundStyle.solid;
-                        });
-                      }
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Motif'),
-                    selected:
-                        _selectedBackgroundStyle == BackgroundStyle.pattern,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedBackgroundStyle = BackgroundStyle.pattern;
-                        });
-                      }
-                    },
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              // Sélection du style de police
-              const Text(
-                'Style de police:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Wrap(
-                spacing: 10,
-                children: [
-                  ChoiceChip(
-                    label: const Text('Classique'),
-                    selected: _selectedFontStyle == FontStyle.classic,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedFontStyle = FontStyle.classic;
-                        });
-                      }
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Moderne'),
-                    selected: _selectedFontStyle == FontStyle.modern,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedFontStyle = FontStyle.modern;
-                        });
-                      }
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Script'),
-                    selected: _selectedFontStyle == FontStyle.script,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedFontStyle = FontStyle.script;
-                        });
-                      }
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Gras'),
-                    selected: _selectedFontStyle == FontStyle.bold,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedFontStyle = FontStyle.bold;
-                        });
-                      }
-                    },
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              // Sélection du schéma de couleurs
-              const Text(
-                'Schéma de couleurs:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Wrap(
-                spacing: 10,
-                children: [
-                  ChoiceChip(
-                    label: const Text('Bleu'),
-                    selected: _selectedColorScheme == ColorSchemeOption.blue,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedColorScheme = ColorSchemeOption.blue;
-                        });
-                      }
-                    },
-                    backgroundColor: Colors.blue.shade100,
-                  ),
-                  ChoiceChip(
-                    label: const Text('Vert'),
-                    selected: _selectedColorScheme == ColorSchemeOption.green,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedColorScheme = ColorSchemeOption.green;
-                        });
-                      }
-                    },
-                    backgroundColor: Colors.green.shade100,
-                  ),
-                  ChoiceChip(
-                    label: const Text('Violet'),
-                    selected: _selectedColorScheme == ColorSchemeOption.purple,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedColorScheme = ColorSchemeOption.purple;
-                        });
-                      }
-                    },
-                    backgroundColor: Colors.purple.shade100,
-                  ),
-                  ChoiceChip(
-                    label: const Text('Coucher de soleil'),
-                    selected: _selectedColorScheme == ColorSchemeOption.sunset,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedColorScheme = ColorSchemeOption.sunset;
-                        });
-                      }
-                    },
-                    backgroundColor: Colors.orange.shade100,
-                  ),
-                  ChoiceChip(
-                    label: const Text('Noir & Blanc'),
-                    selected:
-                        _selectedColorScheme == ColorSchemeOption.grayscale,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedColorScheme = ColorSchemeOption.grayscale;
-                        });
-                      }
-                    },
-                    backgroundColor: Colors.grey.shade100,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              // Taille de police
-              const Text(
-                'Taille de police:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Slider(
-                value: _fontSize,
-                min: 14.0,
-                max: 36.0,
-                divisions: 11,
-                label: '${_fontSize.round()}',
-                onChanged: (value) {
-                  setState(() {
-                    _fontSize = value;
-                  });
-                },
-              ),
-
-              const SizedBox(height: 12),
-
-              // Options supplémentaires
-              Row(
-                children: [
-                  Expanded(
-                    child: CheckboxListTile(
-                      title: const Text('Afficher le cadre'),
-                      value: _showFrame,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          _showFrame = value ?? true;
-                        });
-                      },
-                      dense: true,
-                      controlAffinity: ListTileControlAffinity.leading,
-                    ),
-                  ),
-                  Expanded(
-                    child: CheckboxListTile(
-                      title: const Text('Afficher l\'auteur'),
-                      value: _showAuthor,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          _showAuthor = value ?? true;
-                        });
-                      },
-                      dense: true,
-                      controlAffinity: ListTileControlAffinity.leading,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   // La méthode build est appelée pour construire (ou reconstruire) l'interface
   // visuelle de cet état. Elle est appelée initialement et chaque fois que
   // l'état change (par exemple, via setState(), que nous verrons plus tard).
@@ -779,7 +200,6 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                   maxLines: 3,
                 ),
-
                 const SizedBox(height: 16),
 
                 // Champ de texte pour l'auteur
@@ -795,7 +215,32 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(height: 16),
 
                 // ÉTAPE 7.4: Intégrer le panneau d'options de style dans l'interface
-                _buildStyleOptionsPanel(),
+                StyleOptionsPanel(
+                  selectedBackgroundStyle: _selectedBackgroundStyle,
+                  selectedFontStyle: _selectedFontStyle,
+                  selectedColorScheme: _selectedColorScheme,
+                  showFrame: _showFrame,
+                  showAuthor: _showAuthor,
+                  fontSize: _fontSize,
+                  onBackgroundStyleChanged: (value) {
+                    setState(() => _selectedBackgroundStyle = value);
+                  },
+                  onFontStyleChanged: (value) {
+                    setState(() => _selectedFontStyle = value);
+                  },
+                  onColorSchemeChanged: (value) {
+                    setState(() => _selectedColorScheme = value);
+                  },
+                  onShowFrameChanged: (value) {
+                    setState(() => _showFrame = value);
+                  },
+                  onShowAuthorChanged: (value) {
+                    setState(() => _showAuthor = value);
+                  },
+                  onFontSizeChanged: (value) {
+                    setState(() => _fontSize = value);
+                  },
+                ),
 
                 const SizedBox(height: 20),
 
@@ -836,7 +281,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                                   // ÉTAPE 8.10: Utiliser la fonction générique avec les options de style
                                   final Uint8List? imageBytes =
-                                      await generateStyledImage(
+                                      await ImageService.generateStyledImage(
                                         currentQuote,
                                         currentAuthor,
                                         _selectedBackgroundStyle,
@@ -878,10 +323,10 @@ class _HomeScreenState extends State<HomeScreen>
                                           ),
                                         ),
                                       );
+                                      setState(() {
+                                        _generatedImageBytes = null;
+                                      });
                                     }
-                                    setState(() {
-                                      _generatedImageBytes = null;
-                                    });
                                   }
                                 },
                         icon:
@@ -918,7 +363,7 @@ class _HomeScreenState extends State<HomeScreen>
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed:
-                            _generatedImageBytes == null ? null : _shareImage,
+                            _generatedImageBytes == null ? null : () => FileService.shareImage(context, _generatedImageBytes),
                         icon: const Icon(Icons.share),
                         label: const Text('Partager'),
                         style: ElevatedButton.styleFrom(
@@ -936,7 +381,7 @@ class _HomeScreenState extends State<HomeScreen>
                         onPressed:
                             _generatedImageBytes == null
                                 ? null
-                                : _saveImageToGallery,
+                                : () => FileService.saveImageToGallery(context, _generatedImageBytes),
                         icon: const Icon(Icons.download),
                         label: const Text('Télécharger'),
                         style: ElevatedButton.styleFrom(
